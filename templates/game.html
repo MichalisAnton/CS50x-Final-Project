@@ -1,0 +1,158 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Quiz Room
+{% endblock %}
+
+{% block main %}
+    {% if round.phase == 'Question' %}
+<!-- If leader, he answers the question while other players wait for the question -->
+        {% if is_leader %}
+            <div class="text-center mt-5">
+                <p class="lead">You are the leader of this Round!</p>
+                <p class="text-muted">Ask a question for the rest of the players</p>
+                <form method="POST" action="/submit-question">
+                    <input type="text" minlength="4" autofocus required class="form-control mb-3 mx-auto py-2 w-auto" name="leader_question" placeholder="Question:" autocomplete="off">
+                    <button class="btn action-btn play-btn" type="submit">Submit Question</button>
+                </form>
+            </div>
+        {% else %}
+            {% for player in players %}
+                {% if player.id == round.leader_id %}
+                    <div class="text-center mt-5">
+                        <p class="lead">Waiting for {{ player.name }} to submit their question</p>
+                        <div class="spinner-border" role="status"></div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    {% elif round.phase == 'Answering' %}
+<!-- If leader, he waits while players answer the question -->
+        {% if is_leader %}
+            <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+            <div class="text-center mt-3">
+                <p class="lead">You are the leader of this Round!</p>
+                <p class="text-muted">Waiting on other players to answer</p>
+                <div class="spinner-border spinner-border-sm" role="status"></div>
+            </div>
+            <div class="text-center text-muted mb-3" id="answer-counter">{{ answer_count }} / {{ players|length - 1 }} answered</div>
+        {% else %}
+            <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+            {% if has_answered %}
+                <div class="text-center mt-3">
+                    <p class="lead">Answer submitted! Waiting for others...</p>
+                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                </div>
+                <div class="text-center text-muted mb-3" id="answer-counter">{{ answer_count }} / {{ players|length - 1 }} answered</div>
+            {% else %}
+                <div class="text-center text-muted mb-3" id="answer-counter">{{ answer_count }} / {{ players|length - 1 }} answered</div>
+                <form method="POST" action="/submit-answer">
+                    <input type="text" minlength="4" autofocus required class="form-control mb-3 mx-auto py-2 w-auto" name="answer" placeholder="Your Answer:" autocomplete="off">
+                    <button class="btn action-btn play-btn" type="submit">Submit Answer</button>
+                </form>
+            {% endif %}
+        {% endif %}
+    {% elif round.phase == 'Voting' %}
+<!-- Voting round  -->
+        <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+        <div id="vote-counter" class="text-center text-muted mb-3">{{ vote_count }} / {{ players|length }} voted</div>
+        {% if has_voted %}
+            <div>Waiting for the rest of the players to vote... <div class="spinner-border spinner-border-sm" role="status"><span class="sr-only"></span></div>
+            </div>
+        {% else %}
+            <form method="POST" action="/submit-vote" class="mt-4">
+                {% for answer in vote_answers %}
+                    <input type="radio" name="answer_id" id="answer_{{ answer.id }}" value="{{ answer.id }}" hidden required>
+                    <label for="answer_{{ answer.id }}" class="btn action-btn text-center w-100 d-block mb-3 rounded-pill">
+                        {{ answer.answer }}
+                    </label>
+                {% endfor %}
+                <button class="btn action-btn play-btn" id="vote-btn" disabled type="submit">Submit Vote</button>
+            </form>
+        {% endif %}
+<!-- Advancing-->
+    {% elif round.phase == 'Scoring' %}
+        <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+        <div class="text-center mt-4">
+            <p class="lead">Calculating results...</p>
+            <p class="text-muted">Please wait while the votes are counted.</p>
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+        </div>
+
+    {% elif round.phase == 'Advancing' %}
+        <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+        <div class="text-center mt-4">
+            <p class="lead">Preparing the next round...</p>
+            <p class="text-muted">Please wait while the game advances.</p>
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+        </div>
+<!-- Results -->
+    {% elif round.phase == 'Results' %}
+        <h2 class="text-center fw-bold mb-4">{{ round.question }}</h2>
+        <div class="text-center mb-4">And the winner is...</div>
+<!-- Loop in case there are more than 1 winners -->
+        {% for r in results %}
+            {% if r.vote_count == results[0].vote_count %}
+                <div class="text-center mb-2">
+                    <button class="btn winner-btn play-btn" style="cursor: default;">
+                        {{ r.name }}
+                    </button>
+                </div>
+                <p class="text-center text-muted">{{ r.answer }}</p>
+            {% endif %}
+        {% endfor %}
+        {% if is_leader %}
+            <div class="text-center mt-4">
+                <form method="POST" action="/next-round">
+                    <button class="btn action-btn play-btn" type="submit">Next!</button>
+                </form>
+            </div>
+        {% else %}
+            <div class="text-center mt-4">Waiting for the leader to start the next round...
+                <div class="spinner-border spinner-border-sm" role="status"><span class="sr-only"></span></div>
+            </div>
+        {% endif %}
+        <div class="mt-4">
+            <h5 class="text-center mb-3">Scoreboard</h5>
+            {% for player in players %}
+                <div class="d-flex justify-content-between px-4 py-2 mb-2 rounded scoreboard-row">
+                    <span>{{ player.name }}</span>
+                    <span class="fw-bold">{{ player.score }} pts</span>
+                </div>
+            {% endfor %}
+        </div>
+<!-- View results and exit -->
+    {% endif %}
+    <script>
+        const voteBtn = document.getElementById("vote-btn");
+        if (voteBtn) {
+            document.querySelectorAll("input[name='answer_id']").forEach(radio => {
+                radio.addEventListener("change", () => voteBtn.disabled = false);
+            });
+        }
+        const currentPhase = "{{  round.phase  }}"
+        setInterval(() => {
+            fetch("/game-state")
+                .then(response => response.json())
+                .then(data => {
+                // Reload the page when the game changes state
+                    if (data.phase !== currentPhase ||
+                        data.room_status === "Finished" ||
+                        data.room_status === "Cancelled") {
+                            window.location.reload();
+                        }
+                // Update the number of players that have submitted an answer
+                    const counter = document.getElementById("answer-counter")
+                    if (counter) {
+                        const nonLeaderCount = {{ players|length }} - 1
+                        counter.textContent = parseInt(data.answer_count) + " / " + nonLeaderCount + " answered"
+                    }
+                // Update the number of votes cast in Voting round
+                    const voteCounter = document.getElementById("vote-counter")
+                    if (voteCounter) {
+                        voteCounter.textContent = parseInt(data.vote_count) + " / " + {{ players|length }} + " voted"
+                    }
+                })
+        }, 2000)
+    </script>
+{% endblock %}
